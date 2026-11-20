@@ -513,8 +513,13 @@ void GeneratePitch(int resX, int resY, int resSpecularX, int resSpecularY, int r
     }
   }
 
-  std::thread pitchThread[4];
   float grassNormalRepeatMultiplier = (random(0, 1) > 0.5f) ? 1.0f : 0.5f;
+#ifdef __EMSCRIPTEN__
+  for (int i = 0; i < 4; i++)
+    CreateChunk(i + 1, resX, resY, resSpecularX, resSpecularY,
+                resNormalX, resNormalY, grassNormalRepeatMultiplier);
+#else
+  std::thread pitchThread[4];
   for (int i = 0; i < 4; i++) {
     pitchThread[i] = std::thread(&CreateChunk, i + 1, resX, resY, resSpecularX, resSpecularY,
                                  resNormalX, resNormalY, grassNormalRepeatMultiplier);
@@ -523,6 +528,7 @@ void GeneratePitch(int resX, int resY, int resSpecularX, int resSpecularY, int r
   for (int i = 0; i < 4; i++) {
     pitchThread[i].join();
   }
+#endif
 
   delete perlin1;
   delete perlin2;

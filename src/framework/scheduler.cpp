@@ -156,11 +156,21 @@ bool Scheduler::Run() {
 
   std::unique_lock<std::mutex> lock(somethingIsDoneMutex);
 
+#ifdef __EMSCRIPTEN__
+  // Bound catch-up work so that SDL input, painting and other browser tasks
+  // continue even when the simulation falls behind.
+  int stepsRemaining = 24;
+#else
   unsigned int firstSequence = 0;
+#endif
   int quiterations = 0;
   bool sequencesQuitMessageDone = false;
 
   while (EnvironmentManager::GetInstance().GetQuit() == false || GetSequenceCount() > 0) {
+#ifdef __EMSCRIPTEN__
+    if (stepsRemaining-- == 0)
+      return false;
+#endif
     if (EnvironmentManager::GetInstance().GetQuit()) {
       // let sequences finish
       if (!sequencesQuitMessageDone) {
@@ -316,8 +326,13 @@ bool Scheduler::Run() {
       }
 
       sequences.Unlock();
+#ifdef __EMSCRIPTEN__
+      if (timeout_ms > 0)
+        return false;
+#else
       bool isMessage = somethingIsDone.wait_for(lock, std::chrono::milliseconds(timeout_ms)) !=
                        std::cv_status::timeout;
+#endif
       sequences.Lock();
 
       if (dueEntry.program != std::shared_ptr<TaskSequenceProgram>()) {
@@ -333,9 +348,18 @@ bool Scheduler::Run() {
 
           if (verbose)
             printf("executing program counter %i\n", dueEntry.program->programCounter);
+#ifdef __EMSCRIPTEN__
+          // Inline commands can query or pause their own sequence.
+          sequences.Unlock();
+          lock.unlock();
+#endif
           dueEntry.program->taskSequence->GetEntry(dueEntry.program->programCounter)->Reset();
           dueEntry.program->taskSequence->GetEntry(dueEntry.program->programCounter)->Execute();
 
+#ifdef __EMSCRIPTEN__
+          lock.lock();
+          sequences.Lock();
+#endif
           dueEntry.program->previousProgramCounter = dueEntry.program->programCounter;
           dueEntry.program->programCounter++;
         }

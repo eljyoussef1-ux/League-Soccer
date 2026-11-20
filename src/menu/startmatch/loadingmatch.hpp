@@ -21,6 +21,9 @@ public:
 
 protected:
   bool sentStartGameSignal;
+#ifdef __EMSCRIPTEN__
+  unsigned long readyTime_ms;
+#endif
 };
 
 #endif

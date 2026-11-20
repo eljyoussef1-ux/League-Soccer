@@ -157,8 +157,19 @@ macro(gf_find_sdl2_package name)
   endif()
 endmacro()
 
-# Find required libraries
-if(GAMEPLAYFOOTBALL_BUILD_GAME)
+# Emscripten ports supply target libraries and headers. Keep desktop package
+# discovery out of the cross compilation.
+if(EMSCRIPTEN AND GAMEPLAYFOOTBALL_BUILD_GAME)
+  set(GF_WASM_BOOST_ROOT "" CACHE PATH "Directory containing the Boost headers (boost/)")
+  if(NOT EXISTS "${GF_WASM_BOOST_ROOT}/boost/signals2.hpp")
+    message(FATAL_ERROR "Set GF_WASM_BOOST_ROOT to an extracted Boost distribution")
+  endif()
+  set(Boost_INCLUDE_DIRS "${GF_WASM_BOOST_ROOT}")
+  set(GF_WEB_PORTS -sUSE_SDL=2 -sUSE_SDL_IMAGE=2 "-sSDL2_IMAGE_FORMATS=['png','jpg']"
+    -sUSE_SDL_TTF=2 -sUSE_SDL_GFX=2 -sUSE_SQLITE3=1)
+  add_compile_options(${GF_WEB_PORTS} -fexceptions)
+  add_library(SQLite::SQLite3 INTERFACE IMPORTED)
+elseif(GAMEPLAYFOOTBALL_BUILD_GAME)
   gf_find_boost()
   find_package(OpenGL REQUIRED)
   gf_find_sdl2_package(SDL2)
@@ -351,7 +362,7 @@ if(GAMEPLAYFOOTBALL_BUILD_GAME)
   elseif(OPENGL_LIBRARIES)
     list(APPEND LIBRARIES ${OPENGL_LIBRARIES})
   endif()
-  if(UNIX AND NOT APPLE)
+  if(UNIX AND NOT APPLE AND NOT EMSCRIPTEN)
     list(APPEND LIBRARIES dl m)
   endif()
   if(OpenAL_FOUND)
@@ -378,7 +389,22 @@ if(GAMEPLAYFOOTBALL_BUILD_GAME)
     target_include_directories(gameplayfootball PRIVATE ${OPENAL_INCLUDE_DIR})
   endif()
   
-  if(APPLE)
+  if(EMSCRIPTEN)
+    set_target_properties(gameplayfootball PROPERTIES SUFFIX ".html")
+    target_link_options(gameplayfootball PRIVATE
+      ${GF_WEB_PORTS} -fexceptions -sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2
+      -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=8388608
+      "SHELL:--preload-file \"${PROJECT_SOURCE_DIR}/data/media@/media\""
+      "SHELL:--preload-file \"${PROJECT_SOURCE_DIR}/data/databases@/databases\""
+      "SHELL:--preload-file \"${PROJECT_SOURCE_DIR}/data/locale@/locale\""
+      "SHELL:--preload-file \"${PROJECT_SOURCE_DIR}/data/football.config@/football.config\""
+    )
+    file(GLOB_RECURSE GF_WEB_ASSETS CONFIGURE_DEPENDS LIST_DIRECTORIES false
+      "${PROJECT_SOURCE_DIR}/data/media/*" "${PROJECT_SOURCE_DIR}/data/databases/*"
+      "${PROJECT_SOURCE_DIR}/data/locale/*")
+    set_property(TARGET gameplayfootball APPEND PROPERTY LINK_DEPENDS
+      ${GF_WEB_ASSETS} "${PROJECT_SOURCE_DIR}/data/football.config")
+  elseif(APPLE)
     set_target_properties(gameplayfootball PROPERTIES
       BUILD_WITH_INSTALL_RPATH TRUE
       INSTALL_RPATH "@executable_path;@loader_path"
@@ -394,60 +420,62 @@ if(GAMEPLAYFOOTBALL_BUILD_GAME)
     # glibc ignores this note.
     target_link_options(gameplayfootball PRIVATE "LINKER:-z,stack-size=8388608")
   endif()
-  add_custom_command(TARGET gameplayfootball POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:gameplayfootball>/data
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-      ${PROJECT_SOURCE_DIR}/data/football.config
-      $<TARGET_FILE_DIR:gameplayfootball>/football.config
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-      ${PROJECT_SOURCE_DIR}/data/football.config
-      $<TARGET_FILE_DIR:gameplayfootball>/data/football.config
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-      ${PROJECT_SOURCE_DIR}/data/databases
-      $<TARGET_FILE_DIR:gameplayfootball>/databases
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-      ${PROJECT_SOURCE_DIR}/data/locale
-      $<TARGET_FILE_DIR:gameplayfootball>/locale
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-      ${PROJECT_SOURCE_DIR}/data/media
-      $<TARGET_FILE_DIR:gameplayfootball>/media
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-      ${PROJECT_SOURCE_DIR}/data/locale
-      $<TARGET_FILE_DIR:gameplayfootball>/data/locale
-    COMMENT "Copying runtime assets for gameplayfootball"
-  )
-  # On Windows + modern CMake, copy imported shared-library DLLs next to the
-  # executable so local runs and CI packaging find SDL/OpenAL/SQLite without
-  # requiring PATH edits. Falls back to scripts/package_windows.ps1 for
-  # classic Find-module builds that lack TARGET_RUNTIME_DLLS metadata.
-  if(WIN32 AND CMAKE_VERSION VERSION_GREATER_EQUAL "3.21")
+  if(NOT EMSCRIPTEN)
     add_custom_command(TARGET gameplayfootball POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:gameplayfootball>/data
       COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<TARGET_RUNTIME_DLLS:gameplayfootball>
-        $<TARGET_FILE_DIR:gameplayfootball>
-      COMMAND_EXPAND_LISTS
-      COMMENT "Copying runtime DLLs beside gameplayfootball"
+        ${PROJECT_SOURCE_DIR}/data/football.config
+        $<TARGET_FILE_DIR:gameplayfootball>/football.config
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${PROJECT_SOURCE_DIR}/data/football.config
+        $<TARGET_FILE_DIR:gameplayfootball>/data/football.config
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${PROJECT_SOURCE_DIR}/data/databases
+        $<TARGET_FILE_DIR:gameplayfootball>/databases
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${PROJECT_SOURCE_DIR}/data/locale
+        $<TARGET_FILE_DIR:gameplayfootball>/locale
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${PROJECT_SOURCE_DIR}/data/media
+        $<TARGET_FILE_DIR:gameplayfootball>/media
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${PROJECT_SOURCE_DIR}/data/locale
+        $<TARGET_FILE_DIR:gameplayfootball>/data/locale
+      COMMENT "Copying runtime assets for gameplayfootball"
+    )
+    # On Windows + modern CMake, copy imported shared-library DLLs next to the
+    # executable so local runs and CI packaging find SDL/OpenAL/SQLite without
+    # requiring PATH edits. Falls back to scripts/package_windows.ps1 for
+    # classic Find-module builds that lack TARGET_RUNTIME_DLLS metadata.
+    if(WIN32 AND CMAKE_VERSION VERSION_GREATER_EQUAL "3.21")
+      add_custom_command(TARGET gameplayfootball POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          $<TARGET_RUNTIME_DLLS:gameplayfootball>
+          $<TARGET_FILE_DIR:gameplayfootball>
+        COMMAND_EXPAND_LISTS
+        COMMENT "Copying runtime DLLs beside gameplayfootball"
+      )
+    endif()
+
+    # Standard install targets for packaging and distribution
+    install(TARGETS gameplayfootball
+      RUNTIME DESTINATION bin
+    )
+    install(FILES ${PROJECT_SOURCE_DIR}/data/football.config
+      DESTINATION bin
+    )
+    install(DIRECTORY ${PROJECT_SOURCE_DIR}/data/databases
+      ${PROJECT_SOURCE_DIR}/data/locale
+      ${PROJECT_SOURCE_DIR}/data/media
+      DESTINATION bin
+    )
+    install(DIRECTORY ${PROJECT_SOURCE_DIR}/data/locale
+      DESTINATION bin/data
+    )
+    install(FILES ${PROJECT_SOURCE_DIR}/data/football.config
+      DESTINATION bin/data
     )
   endif()
-
-  # Standard install targets for packaging and distribution
-  install(TARGETS gameplayfootball
-    RUNTIME DESTINATION bin
-  )
-  install(FILES ${PROJECT_SOURCE_DIR}/data/football.config
-    DESTINATION bin
-  )
-  install(DIRECTORY ${PROJECT_SOURCE_DIR}/data/databases
-    ${PROJECT_SOURCE_DIR}/data/locale
-    ${PROJECT_SOURCE_DIR}/data/media
-    DESTINATION bin
-  )
-  install(DIRECTORY ${PROJECT_SOURCE_DIR}/data/locale
-    DESTINATION bin/data
-  )
-  install(FILES ${PROJECT_SOURCE_DIR}/data/football.config
-    DESTINATION bin/data
-  )
 endif()
 
 if(BUILD_TESTING)

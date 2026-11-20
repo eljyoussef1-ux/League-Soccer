@@ -94,6 +94,10 @@ static LONG WINAPI CustomCrashHandler(EXCEPTION_POINTERS* pExceptionInfo) {
 }
 #endif
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten/emscripten.h>
+#endif
+
 #include <cstdlib>
 #include <filesystem>
 #include <mutex>
@@ -510,6 +514,7 @@ int main(int argc, const char** argv) {
 #ifdef WIN32
   SetUnhandledExceptionFilter(CustomCrashHandler);
 #endif
+#ifndef __EMSCRIPTEN__
   if (argc > 0) {
     try {
       std::filesystem::path exeDir =
@@ -538,6 +543,7 @@ int main(int argc, const char** argv) {
     } catch (...) {
     }
   }
+#endif
   config = new Properties();
   if (argc > 1)
     configFile = argv[1];
@@ -755,7 +761,13 @@ int main(int argc, const char** argv) {
   GetScheduler()->RegisterTaskSequence(gameSequence);
 
   graphicsSequence = std::shared_ptr<TaskSequence>(
-      new TaskSequence("graphics", config->GetInt("graphics3d_frametime_ms", 0), true));
+      new TaskSequence("graphics", config->GetInt("graphics3d_frametime_ms",
+#ifdef __EMSCRIPTEN__
+                                                     16
+#else
+                                                     0
+#endif
+                                                     ), true));
 
   graphicsSequence->AddUserTaskEntry(gameTask, e_TaskPhase_Put);
   graphicsSequence->AddSystemTaskEntry(graphicsSystem, e_TaskPhase_Get);
@@ -768,59 +780,74 @@ int main(int argc, const char** argv) {
   printf("[MAIN] calling Run()\n");
   fflush(stdout);
 
+  auto shutdown = [threadHudThread, defaultFont, defaultOutlineFont] {
+
+    if (SuperDebug())
+      scene2D->DeleteObject(debugImage);
+    if (GetDebugMode() == e_DebugMode_AI)
+      scene2D->DeleteObject(debugOverlay);
+
+    gameTask.reset();
+    menuTask.reset();
+
+    gameSequence.reset();
+    graphicsSequence.reset();
+
+    greenPilon->Exit();
+    greenPilon.reset();
+    bluePilon->Exit();
+    bluePilon.reset();
+    yellowPilon->Exit();
+    yellowPilon.reset();
+    redPilon->Exit();
+    redPilon.reset();
+    smallDebugCircle1->Exit();
+    smallDebugCircle1.reset();
+    smallDebugCircle2->Exit();
+    smallDebugCircle2.reset();
+    largeDebugCircle->Exit();
+    largeDebugCircle.reset();
+
+    if (threadHudThread) {
+      boost::intrusive_ptr<Message_Shutdown> shutdownMessage = new Message_Shutdown();
+      threadHudThread->messageQueue.PushMessage(shutdownMessage);
+      threadHudThread->Join();
+      delete threadHudThread;
+      shutdownMessage.reset();
+    }
+
+    scene2D.reset();
+    scene3D.reset();
+
+    for (auto* controller : controllers) {
+      delete controller;
+    }
+    controllers.clear();
+
+    TTF_CloseFont(defaultFont);         // todo: better timed closefont?
+    TTF_CloseFont(defaultOutlineFont);  // todo: better timed closefont?
+
+    delete db;
+    delete config;
+
+    Exit();
+
+  };
+
+#ifdef __EMSCRIPTEN__
+  static const auto finish = shutdown;
+  emscripten_set_main_loop([] {
+    graphicsSystem->PollEvents();
+    if (GetScheduler()->Run()) {
+      emscripten_cancel_main_loop();
+      DestroyScheduler();
+      finish();
+    }
+  }, 0, false);
+#else
   Run();
-
-  // exit
-
-  if (SuperDebug())
-    scene2D->DeleteObject(debugImage);
-  if (GetDebugMode() == e_DebugMode_AI)
-    scene2D->DeleteObject(debugOverlay);
-
-  gameTask.reset();
-  menuTask.reset();
-
-  gameSequence.reset();
-  graphicsSequence.reset();
-
-  greenPilon->Exit();
-  greenPilon.reset();
-  bluePilon->Exit();
-  bluePilon.reset();
-  yellowPilon->Exit();
-  yellowPilon.reset();
-  redPilon->Exit();
-  redPilon.reset();
-  smallDebugCircle1->Exit();
-  smallDebugCircle1.reset();
-  smallDebugCircle2->Exit();
-  smallDebugCircle2.reset();
-  largeDebugCircle->Exit();
-  largeDebugCircle.reset();
-
-  if (threadHudThread) {
-    boost::intrusive_ptr<Message_Shutdown> shutdownMessage = new Message_Shutdown();
-    threadHudThread->messageQueue.PushMessage(shutdownMessage);
-    threadHudThread->Join();
-    delete threadHudThread;
-    shutdownMessage.reset();
-  }
-
-  scene2D.reset();
-  scene3D.reset();
-
-  for (auto* controller : controllers) {
-    delete controller;
-  }
-  controllers.clear();
-
-  TTF_CloseFont(defaultFont);         // todo: better timed closefont?
-  TTF_CloseFont(defaultOutlineFont);  // todo: better timed closefont?
-
-  delete db;
-  delete config;
-
-  Exit();
+  shutdown();
+#endif
 
   return 0;
 }

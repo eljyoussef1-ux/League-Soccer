@@ -31,7 +31,7 @@ out vec4 stdout0;
 out vec4 stdout1;
 
 vec3 GetWorldPosition(vec2 texCoord, float depth) {
-  vec4 projectedPos = vec4(texCoord.x * 2 - 1, texCoord.y * 2 - 1, depth * 2 - 1, 1.0f);
+  vec4 projectedPos = vec4(texCoord.x * 2.0 - 1.0, texCoord.y * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0f);
   vec4 worldPosition = inverseProjectionViewMatrix * projectedPos;
   worldPosition.xyz /= worldPosition.w;
   return worldPosition.xyz;

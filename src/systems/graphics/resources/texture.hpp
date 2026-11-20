@@ -34,6 +34,9 @@ public:
 
 protected:
   int textureID;
+#ifdef __EMSCRIPTEN__
+  e_PixelFormat uploadFormat = e_PixelFormat_RGB;
+#endif
   Renderer3D* renderer3D;
   int width, height;
 };

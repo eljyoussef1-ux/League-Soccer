@@ -1,3 +1,5 @@
+#version 150
+
 // Copyright 2019 Google LLC & Bastiaan Konings
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,7 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#version 150
 
 in vec2 TexCoords;
 out vec4 stdout;

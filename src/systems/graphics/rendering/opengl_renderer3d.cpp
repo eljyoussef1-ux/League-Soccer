@@ -19,6 +19,12 @@
 #include <SDL2/SDL_opengl.h>
 #endif
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten/html5.h>
+extern "C" void glClearDepthf(GLfloat depth);
+#include <regex>
+#endif
+
 #include <cmath>
 #include <filesystem>
 #include <vector>
@@ -446,6 +452,12 @@ bool OpenGLRenderer3D::CreateContext(int width, int height, int bpp, bool fullsc
 #endif
   SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER);
 
+#ifdef __EMSCRIPTEN__
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+#endif
+
   SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
   SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
   SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
@@ -528,9 +540,19 @@ bool OpenGLRenderer3D::CreateContext(int width, int height, int bpp, bool fullsc
 #include "sdl_glfuncs.h"
 #undef SDL_PROC
 
+#ifdef __EMSCRIPTEN__
+  // Deferred lighting renders into RGBA16F color attachments.
+  if (!emscripten_webgl_enable_extension(emscripten_webgl_get_current_context(),
+                                        "EXT_color_buffer_float")) {
+    Log(e_FatalError, "OpenGLRenderer3D", "CreateContext",
+        "WebGL2 requires EXT_color_buffer_float for deferred lighting");
+  }
+#endif
+
   std::string glVersionString = (char*)mapping.glGetString(GL_VERSION);
   Log(e_Notice, "OpenGLRenderer3D", "CreateContext", "Using OpenGL version " + glVersionString);
 
+#ifndef __EMSCRIPTEN__
   int glVersion[2] = {0, 0};
   mapping.glGetIntegerv(GL_MAJOR_VERSION, &glVersion[0]);
   mapping.glGetIntegerv(GL_MINOR_VERSION, &glVersion[1]);
@@ -547,6 +569,7 @@ bool OpenGLRenderer3D::CreateContext(int width, int height, int bpp, bool fullsc
   if (!higherThan32)
     Log(e_Warning, "OpenGLRenderer3D", "CreateContext",
         "OpenGL version not equal to or higher than 3.2 (or not reported as such)");
+#endif
 
 #ifdef WIN32
     // VK: TODO check if centering is still required with SDL2
@@ -618,7 +641,9 @@ bool OpenGLRenderer3D::CreateContext(int width, int height, int bpp, bool fullsc
   // mapping.glEnable(GL_COLOR_MATERIAL);
   // mapping.glColorMaterial(GL_FRONT, GL_AMBIENT_AND_DIFFUSE);
 
+#ifndef __EMSCRIPTEN__
   mapping.glDisable(GL_MULTISAMPLE);
+#endif
   mapping.glCullFace(GL_BACK);
 
   // shaders
@@ -657,10 +682,16 @@ bool OpenGLRenderer3D::CreateContext(int width, int height, int bpp, bool fullsc
   InitializeOverlayAndQuadBuffers();
 
   mapping.glClearColor(0, 0, 0, 0);
+#ifdef __EMSCRIPTEN__
+  glClearDepthf(1.0f);
+#else
   mapping.glClearDepth(1.0);
+#endif
   mapping.glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
+#ifndef __EMSCRIPTEN__
   mapping.glDisable(GL_MULTISAMPLE);
+#endif
 
   return true;
 }
@@ -974,7 +1005,9 @@ void OpenGLRenderer3D::SetTextureMode(e_TextureMode textureMode) {
 }
 
 void OpenGLRenderer3D::SetColor(const Vector3& color, float alpha) {
+#ifndef __EMSCRIPTEN__
   mapping.glColor4f(color.coords[0], color.coords[1], color.coords[2], alpha);
+#endif
 }
 
 void OpenGLRenderer3D::SetColorMask(bool r, bool g, bool b, bool alpha) {
@@ -1191,6 +1224,10 @@ void OpenGLRenderer3D::UpdateVertexBuffer(VertexBufferID vertexBufferID, float* 
       GL_ARRAY_BUFFER,
       writeVertexBufferID);  // todo: why is this necessary? shouldn't this be part of the vao?
 
+#ifdef __EMSCRIPTEN__
+  mapping.glBufferData(GL_ARRAY_BUFFER, verticesDataSize * sizeof(float), vertices,
+                       GL_DYNAMIC_DRAW);
+#else
   // glBufferData(GL_ARRAY_BUFFER, verticesDataSize * sizeof(float), vertices, GL_DYNAMIC_DRAW);
 
   //    glBufferData(GL_ARRAY_BUFFER, verticesDataSize * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
@@ -1238,6 +1275,8 @@ void OpenGLRenderer3D::UpdateVertexBuffer(VertexBufferID vertexBufferID, float* 
       }
   */
   // VAOfence.insert(std::pair<int, GLsync>(writeVertexArrayID, syncObj));
+
+#endif
 
   mapping.glBindVertexArray(0);
   mapping.glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -1841,9 +1880,23 @@ int OpenGLRenderer3D::CreateTexture(e_InternalPixelFormat internalPixelFormat,
     SetMaxAnisotropy();
   }
 
+  GLenum dataType = GL_UNSIGNED_BYTE;
+#ifdef __EMSCRIPTEN__
+  if (pixelFormat == e_PixelFormat_DepthComponent) {
+    dataType = internalPixelFormat == e_InternalPixelFormat_DepthComponent16
+                   ? GL_UNSIGNED_SHORT
+                   : GL_UNSIGNED_INT;
+    if (internalPixelFormat == e_InternalPixelFormat_DepthComponent32F)
+      dataType = GL_FLOAT;
+  } else if (internalPixelFormat == e_InternalPixelFormat_RGBA16F) {
+    dataType = GL_HALF_FLOAT;
+  } else if (internalPixelFormat == e_InternalPixelFormat_RGBA32F) {
+    dataType = GL_FLOAT;
+  }
+#endif
   if (!multisample) {
     mapping.glTexImage2D(GL_TEXTURE_2D, 0, GetGLInternalPixelFormat(internalPixelFormat), width,
-                         height, 0, GetGLPixelFormat(pixelFormat), GL_UNSIGNED_BYTE, nullptr);
+                         height, 0, GetGLPixelFormat(pixelFormat), dataType, nullptr);
   } else {
     // todo: needs opengl 3.2 libs!
     // glTexImage2DMultiSample(GL_TEXTURE_2D_MULTISAMPLE_ARRAY, 5,
@@ -1980,7 +2033,9 @@ void OpenGLRenderer3D::SetTextureUnit(int textureUnit) {
 
 void OpenGLRenderer3D::SetClientTextureUnit(int textureUnit) {
   // assert(glClientActiveTexture);
+#ifndef __EMSCRIPTEN__
   mapping.glClientActiveTexture(GL_TEXTURE0 + (GLuint)textureUnit);
+#endif
 }
 
 void OpenGLRenderer3D::SetMaxAnisotropy() {
@@ -1999,10 +2054,18 @@ GLenum GetGLTargetAttachment(e_TargetAttachment targetAttachment) {
       target = GL_NONE;
       break;
     case e_TargetAttachment_Front:
+#ifdef __EMSCRIPTEN__
+      target = GL_BACK;
+#else
       target = GL_FRONT_LEFT;
+#endif
       break;
     case e_TargetAttachment_Back:
+#ifdef __EMSCRIPTEN__
+      target = GL_BACK;
+#else
       target = GL_BACK_LEFT;
+#endif
       break;
     case e_TargetAttachment_Depth:
       target = GL_DEPTH_ATTACHMENT;
@@ -2105,11 +2168,15 @@ void OpenGLRenderer3D::SetFOV(float angle) {
 }
 
 void OpenGLRenderer3D::PushAttribute(int attr) {
+#ifndef __EMSCRIPTEN__
   mapping.glPushAttrib((GLbitfield)attr);
+#endif
 }
 
 void OpenGLRenderer3D::PopAttribute() {
+#ifndef __EMSCRIPTEN__
   mapping.glPopAttrib();
+#endif
 }
 
 void OpenGLRenderer3D::SetViewport(int x, int y, int width, int height) {
@@ -2139,6 +2206,19 @@ void LoadGLShader(GLuint shaderID, const std::string& filename) {
     source_flat.append("\n");
   }
 
+#ifdef __EMSCRIPTEN__
+  // Translate the shared desktop shaders into the WebGL2 dialect.
+  static const std::regex version("#version 150");
+  static const std::regex legacyTexture(R"(\btexture2D\b)");
+  static const std::regex singleOutput(R"(\bout vec4 stdout;)");
+  static const std::regex indexedOutput(R"(\bout vec4 stdout([0-2]);)");
+  source_flat = std::regex_replace(source_flat, version,
+      "#version 300 es\n#define GF_WEBGL 1\nprecision highp float;\nprecision highp int;\n"
+      "precision highp sampler2DShadow;");
+  source_flat = std::regex_replace(source_flat, legacyTexture, "texture");
+  source_flat = std::regex_replace(source_flat, singleOutput, "layout(location = 0) out vec4 stdout;");
+  source_flat = std::regex_replace(source_flat, indexedOutput, "layout(location = $1) out vec4 stdout$1;");
+#endif
   const char* sourceChar = source_flat.c_str();
   mapping.glShaderSource(shaderID, 1, &sourceChar, nullptr);
   mapping.glCompileShader(shaderID);
@@ -2318,7 +2398,9 @@ void OpenGLRenderer3D::LoadShader(const std::string& name, const std::string& fi
 
   if (name == "zphase") {
     mapping.glBindAttribLocation(shader.programID, 0, "position");
+#ifndef __EMSCRIPTEN__
     mapping.glBindFragDataLocation(shader.programID, 0, "stdout");
+#endif
   }
   if (name == "simple") {
     mapping.glBindAttribLocation(shader.programID, 0, "position");
@@ -2326,25 +2408,35 @@ void OpenGLRenderer3D::LoadShader(const std::string& name, const std::string& fi
     mapping.glBindAttribLocation(shader.programID, 2, "texcoord");
     mapping.glBindAttribLocation(shader.programID, 3, "tangent");
     mapping.glBindAttribLocation(shader.programID, 4, "bitangent");
+#ifndef __EMSCRIPTEN__
     mapping.glBindFragDataLocation(shader.programID, 0, "stdout0");
     mapping.glBindFragDataLocation(shader.programID, 1, "stdout1");
     mapping.glBindFragDataLocation(shader.programID, 2, "stdout2");
+#endif
   }
   if (name == "ambient") {
     mapping.glBindAttribLocation(shader.programID, 0, "position");
+#ifndef __EMSCRIPTEN__
     mapping.glBindFragDataLocation(shader.programID, 0, "stdout");
+#endif
   }
   if (name == "lighting") {
+#ifndef __EMSCRIPTEN__
     mapping.glBindFragDataLocation(shader.programID, 0, "stdout0");
     mapping.glBindFragDataLocation(shader.programID, 1, "stdout1");
+#endif
   }
   if (name == "postprocess") {
     mapping.glBindAttribLocation(shader.programID, 0, "position");
+#ifndef __EMSCRIPTEN__
     mapping.glBindFragDataLocation(shader.programID, 0, "stdout");
+#endif
   }
   if (name == "overlay") {
     mapping.glBindAttribLocation(shader.programID, 0, "vertex");
+#ifndef __EMSCRIPTEN__
     mapping.glBindFragDataLocation(shader.programID, 0, "stdout");
+#endif
   }
 
   mapping.glLinkProgram(shader.programID);
@@ -2408,11 +2500,13 @@ void OpenGLRenderer3D::LoadShader(const std::string& name, const std::string& fi
 }
 
 void OpenGLRenderer3D::SetFramebufferGammaCorrection(bool onOff) {
+#ifndef __EMSCRIPTEN__
   if (onOff) {
     mapping.glEnable(GL_FRAMEBUFFER_SRGB);
   } else {
     mapping.glDisable(GL_FRAMEBUFFER_SRGB);
   }
+#endif
 }
 
 void OpenGLRenderer3D::UseShader(const std::string& name) {
@@ -2557,7 +2651,12 @@ void OpenGLRenderer3D::SetUniformMatrix4(const std::string& shaderName, const st
     uniformCache.insert(std::pair<std::string, GLint>(shaderName + "_var_" + varName, location));
   }
   // mapping.glUniformMatrix4fv(location, 1, false, (float*)mat.GetTransposed().elements);
+#ifdef __EMSCRIPTEN__
+  const Matrix4 transposed = mat.GetTransposed();
+  mapping.glUniformMatrix4fv(location, 1, GL_FALSE, transposed.elements);
+#else
   mapping.glUniformMatrix4fv(location, 1, true, (float*)mat.elements);  // true == transposed
+#endif
 }
 
 void OpenGLRenderer3D::HDRCaptureOverallBrightness() {
@@ -2586,6 +2685,50 @@ float OpenGLRenderer3D::HDRGetOverallBrightness() {
   return overallBrightness;
 }
 
+void OpenGLRenderer3D::PollEvents() {
+  SDL_Event event;
+  while (SDL_PollEvent(&event)) {
+    // context losing/gaining focus
+    if (event.type == SDL_WINDOWEVENT) {
+      if (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
+        contextIsActive = false;
+        // Releases that happen while unfocused are never delivered; drop
+        // held keys/buttons so nothing stays "pressed" after Alt-Tab.
+        UserEventManager::GetInstance().ReleaseAllInputs();
+      } else if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
+        contextIsActive = true;
+      }
+    }
+
+    switch (event.type) {
+      case SDL_QUIT:
+        EnvironmentManager::GetInstance().SignalQuit();
+        break;
+      case SDL_KEYDOWN:
+        switch (event.key.keysym.sym) {
+          case SDLK_F12:
+            EnvironmentManager::GetInstance().SignalQuit();
+            break;
+          default:
+            break;
+        }
+        break;
+      default:
+        break;
+    }
+
+    // Presses only count while focused, but releases and device hot-plug
+    // must always be processed or state goes stale (stuck keys, phantom pads).
+    const bool alwaysForward =
+        event.type == SDL_KEYUP || event.type == SDL_JOYBUTTONUP ||
+        event.type == SDL_MOUSEBUTTONUP || event.type == SDL_JOYDEVICEADDED ||
+        event.type == SDL_JOYDEVICEREMOVED || event.type == SDL_KEYMAPCHANGED;
+    if (contextIsActive || alwaysForward) {
+      UserEventManager::GetInstance().InputSDLEvent(event);
+    }
+  }
+}
+
 // thread main loop
 
 void OpenGLRenderer3D::operator()() {
@@ -2607,52 +2750,9 @@ void OpenGLRenderer3D::operator()() {
     SDL_RaiseWindow(window);
   }
 
-  SDL_Event event;
-
   bool quit = false;
   while (!quit) {
-    // process messages
-
-    while (SDL_PollEvent(&event)) {
-      // context losing/gaining focus
-      if (event.type == SDL_WINDOWEVENT) {
-        if (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
-          contextIsActive = false;
-          // Releases that happen while unfocused are never delivered; drop
-          // held keys/buttons so nothing stays "pressed" after Alt-Tab.
-          UserEventManager::GetInstance().ReleaseAllInputs();
-        } else if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
-          contextIsActive = true;
-        }
-      }
-
-      switch (event.type) {
-        case SDL_QUIT:
-          EnvironmentManager::GetInstance().SignalQuit();
-          break;
-        case SDL_KEYDOWN:
-          switch (event.key.keysym.sym) {
-            case SDLK_F12:
-              EnvironmentManager::GetInstance().SignalQuit();
-              break;
-            default:
-              break;
-          }
-          break;
-        default:
-          break;
-      }
-
-      // Presses only count while focused, but releases and device hot-plug
-      // must always be processed or state goes stale (stuck keys, phantom pads).
-      const bool alwaysForward =
-          event.type == SDL_KEYUP || event.type == SDL_JOYBUTTONUP ||
-          event.type == SDL_MOUSEBUTTONUP || event.type == SDL_JOYDEVICEADDED ||
-          event.type == SDL_JOYDEVICEREMOVED || event.type == SDL_KEYMAPCHANGED;
-      if (contextIsActive || alwaysForward) {
-        UserEventManager::GetInstance().InputSDLEvent(event);
-      }
-    }
+    PollEvents();
 
     // todo: manual joy handling? see joy init in usereventmanager
     // SDL_JoystickUpdate();

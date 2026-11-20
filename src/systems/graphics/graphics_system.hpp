@@ -20,6 +20,9 @@ public:
   GraphicsSystem();
   virtual ~GraphicsSystem();
 
+#ifdef __EMSCRIPTEN__
+  void PollEvents();
+#endif
   virtual void Initialize(const Properties& config) override;
   virtual void Exit() override;
 

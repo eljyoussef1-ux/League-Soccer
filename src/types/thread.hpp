@@ -45,9 +45,15 @@ public:
 
   // --- /CARE
 
+#ifdef __EMSCRIPTEN__
+  // The browser owns the event loop. Commands addressed to these tasks
+  // complete inline, including those followed by a synchronous Wait().
+  void Run() { messageQueue.DispatchTo(this); }
+  void Join() {}
+#else
   void Run() { thread = std::thread(std::ref(*this)); }
-
   void Join() { thread.join(); }
+#endif
 
   // thread main loop
   virtual void operator()() = 0;

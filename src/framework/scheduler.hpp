@@ -79,6 +79,9 @@ protected:
   TaskManager* taskManager;
 
   unsigned long previousTime_ms;
+#ifdef __EMSCRIPTEN__
+  unsigned int firstSequence = 0;
+#endif
 
   Lockable<std::vector<std::shared_ptr<TaskSequenceProgram>>> sequences;
 

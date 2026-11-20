@@ -39,6 +39,7 @@ public:
   // init & exit
   virtual bool CreateContext(int width, int height, int bpp, bool fullscreen);
   virtual void Exit();
+  void PollEvents();
 
   virtual int CreateView(float x_percent, float y_percent, float width_percent,
                          float height_percent);

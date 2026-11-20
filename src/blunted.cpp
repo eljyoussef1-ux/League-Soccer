@@ -117,11 +117,15 @@ void Initialize(Properties& config) {
   RegisterObjectTypes(objectFactory);
 }
 
+#ifdef __EMSCRIPTEN__
+void DestroyScheduler() {
+#else
 void Run() {
   printf("RUN\n");
 
   scheduler->Run();
 
+#endif
   // stop signaling systems
   // also clears links to user tasks
   scheduler->Exit();
@@ -177,7 +181,9 @@ void Exit() {
 
   printf("READY\n");
 
+#ifndef __EMSCRIPTEN__
   EnvironmentManager::GetInstance().Pause_ms(1000);
+#endif
   EnvironmentManager::GetInstance().Destroy();
 
   TTF_Quit();

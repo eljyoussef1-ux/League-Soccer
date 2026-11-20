@@ -13,6 +13,9 @@ void Initialize(Properties& config);
 
 /// run the scheduler
 void Run();
+#ifdef __EMSCRIPTEN__
+void DestroyScheduler();
+#endif
 
 Scheduler* GetScheduler();
 

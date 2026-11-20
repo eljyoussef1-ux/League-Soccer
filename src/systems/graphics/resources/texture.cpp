@@ -11,9 +11,42 @@
 
 #include "texture.hpp"
 
+#ifdef __EMSCRIPTEN__
+#include <memory>
+#endif
+
 #include "../rendering/r3d_messages.hpp"
 
 namespace blunted {
+
+#ifdef __EMSCRIPTEN__
+namespace {
+
+// WebGL2 checks the upload format against the sized internal format. Use
+// SRGB8_ALPHA8 for sRGB textures so that mipmap generation is supported.
+void PrepareTextureFormat(e_InternalPixelFormat& internalFormat, e_PixelFormat& pixelFormat) {
+  if (internalFormat == e_InternalPixelFormat_SRGB8)
+    internalFormat = e_InternalPixelFormat_SRGBA8;
+  if (internalFormat == e_InternalPixelFormat_SRGBA8 ||
+      internalFormat == e_InternalPixelFormat_RGBA8)
+    pixelFormat = e_PixelFormat_RGBA;
+}
+
+using SurfacePtr = std::unique_ptr<SDL_Surface, decltype(&SDL_FreeSurface)>;
+
+SurfacePtr ConvertUpload(SDL_Surface* image, e_PixelFormat format) {
+  const Uint32 sdlFormat = format == e_PixelFormat_RGBA ? SDL_PIXELFORMAT_RGBA32
+                                                        : SDL_PIXELFORMAT_RGB24;
+  SurfacePtr converted(nullptr, SDL_FreeSurface);
+  if (image->format->format != sdlFormat) {
+    converted.reset(SDL_ConvertSurfaceFormat(image, sdlFormat, 0));
+    if (!converted)
+      Log(e_FatalError, "Texture", "ConvertUpload", SDL_GetError());
+  }
+  return converted;
+}
+}  // namespace
+#endif
 
 Texture::Texture() : textureID(-1) {
   // printf("CREATING TEXTUREID\n");
@@ -51,6 +84,10 @@ int Texture::CreateTexture(e_InternalPixelFormat internalPixelFormat, e_PixelFor
                            bool filter, bool compareDepth) {
   assert(renderer3D);
 
+#ifdef __EMSCRIPTEN__
+  PrepareTextureFormat(internalPixelFormat, pixelFormat);
+  uploadFormat = pixelFormat;
+#endif
   boost::intrusive_ptr<Renderer3DMessage_CreateTexture> createTexture(
       new Renderer3DMessage_CreateTexture(internalPixelFormat, pixelFormat, width, height, alpha,
                                           repeat, mipmaps, filter,
@@ -71,7 +108,16 @@ void Texture::ResizeTexture(SDL_Surface* image, e_InternalPixelFormat internalPi
   assert(renderer3D);
   assert(textureID != -1);
 
+#ifdef __EMSCRIPTEN__
+  PrepareTextureFormat(internalPixelFormat, pixelFormat);
+  uploadFormat = pixelFormat;
+  auto converted = ConvertUpload(image, uploadFormat);
+  if (converted)
+    image = converted.get();
+  bool _alpha = uploadFormat == e_PixelFormat_RGBA;
+#else
   bool _alpha = SDL_ISPIXELFORMAT_ALPHA(image->format->format);
+#endif
   boost::intrusive_ptr<Renderer3DMessage_ResizeTexture> resizeTexture(
       new Renderer3DMessage_ResizeTexture(textureID, image, internalPixelFormat, pixelFormat,
                                           _alpha, mipmaps));
@@ -83,7 +129,14 @@ void Texture::UpdateTexture(SDL_Surface* image, bool alpha, bool mipmaps) {
   assert(renderer3D);
   assert(textureID != -1);
 
+#ifdef __EMSCRIPTEN__
+  auto converted = ConvertUpload(image, uploadFormat);
+  if (converted)
+    image = converted.get();
+  bool _alpha = uploadFormat == e_PixelFormat_RGBA;
+#else
   bool _alpha = SDL_ISPIXELFORMAT_ALPHA(image->format->format);
+#endif
   boost::intrusive_ptr<Renderer3DMessage_UpdateTexture> updateTexture(
       new Renderer3DMessage_UpdateTexture(textureID, image, _alpha, mipmaps));
   renderer3D->messageQueue.PushMessage(updateTexture);

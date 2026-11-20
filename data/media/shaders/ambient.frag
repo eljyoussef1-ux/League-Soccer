@@ -25,7 +25,7 @@ uniform float ssaoRadius;
 
 uniform vec2 cameraClip;
 
-const int SSAO_kernelSize = 32; // don't make larger than this: 32 is hardcoded in source, so no more sample positions exist
+const int SSAO_kernelSize = 32; // don't make larger than this: 32 is hardcoded in source, so no more occlusionSample positions exist
 //uniform int SSAO_kernelSize; // won't work until glsl 4.3 or so.
 uniform vec3 SSAO_kernel[SSAO_kernelSize];
 
@@ -106,7 +106,7 @@ float GetEdge(vec2 pos) {
 }
 
 vec3 GetWorldPosition(vec2 texCoord, float depth) {
-  vec4 projectedPos = vec4(texCoord.x * 2 - 1, texCoord.y * 2 - 1, depth * 2 - 1, 1.0f);
+  vec4 projectedPos = vec4(texCoord.x * 2.0 - 1.0, texCoord.y * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0f);
   vec4 worldPosition = inverseProjectionViewMatrix * projectedPos;
   worldPosition.xyz /= worldPosition.w;
   return worldPosition.xyz;
@@ -129,7 +129,7 @@ void main(void) {
   float brightness = 0.15f;//0.25f;
 
   // blueish tint + brightness
-  vec3 baseDesaturated = vec3((base.r + base.g + base.b) / 3);
+  vec3 baseDesaturated = vec3((base.r + base.g + base.b) / 3.0);
   base = baseDesaturated * 0.7 + base * 0.3;
   base *= vec3(0.9f, 1.0f, 1.2f) * brightness;
 
@@ -153,14 +153,14 @@ void main(void) {
 
   for (int i = 0; i < SSAO_kernelSize; ++i) {
 
-    // get sample position in viewspace coords
-    vec3 sample = tbn * SSAO_kernel[i];
-    sample = viewPosition + sample * SSAO_radius;
-    // sample.z darkens in the distance
-    //test += sample / (SSAO_kernelSize * 1.0f);
+    // get occlusionSample position in viewspace coords
+    vec3 occlusionSample = tbn * SSAO_kernel[i];
+    occlusionSample = viewPosition + occlusionSample * SSAO_radius;
+    // occlusionSample.z darkens in the distance
+    //test += occlusionSample / (float(SSAO_kernelSize));
 
-    // sample position to projection space
-    vec4 offset = projectionMatrix * vec4(sample, 1.0f);
+    // occlusionSample position to projection space
+    vec4 offset = projectionMatrix * vec4(occlusionSample, 1.0f);
     offset.xy /= offset.w;
     offset.xy = offset.xy * 0.5f + 0.5f;
 
@@ -171,12 +171,12 @@ void main(void) {
     // falloff after radius
     //float rangeCheckFalloff = abs(-viewPosition.z - sampleDepth) < SSAO_radius ? 1.0f : 0.0f;
     float rangeCheckFalloff = clamp((SSAO_radius - abs(-viewPosition.z - sampleDepth) * 0.5f) / SSAO_radius, 0.0f, 1.0f); // gradual falloff version. * 0.4f == don't fall off all too gracefully; pow would be better (but slower!)
-    // if actual fragment's depth is behind sample position, do not count
-    float rangeCheckInside = sampleDepth < -sample.z ? 1.0f : 0.0f;
+    // if actual fragment's depth is behind occlusionSample position, do not count
+    float rangeCheckInside = sampleDepth < -occlusionSample.z ? 1.0f : 0.0f;
 
     SSAO += rangeCheckFalloff * rangeCheckInside;
   }
-  SSAO /= SSAO_kernelSize * 1.0f;
+  SSAO /= float(SSAO_kernelSize);
   SSAO = 1.0f - SSAO;
   //SSAO = SSAO * 2.0f - 1.0f; // exaggerate effect
   SSAO = SSAO * ssaoStrength * 1.5f - 0.5f * ssaoStrength; // exaggerate effect

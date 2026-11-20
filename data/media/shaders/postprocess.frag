@@ -70,10 +70,10 @@ void main(void) {
   // edge blur
   if (modifier.r > 0.0) {
     vec3 smoothPixel = vec3(0);
-    smoothPixel += texture2D(map_accumulation, texCoord + vec2(0, 1 / contextHeight)).xyz;
-    smoothPixel += texture2D(map_accumulation, texCoord + vec2(1 / contextWidth, 0)).xyz;
-    smoothPixel += texture2D(map_accumulation, texCoord + vec2(0, -1 / contextHeight)).xyz;
-    smoothPixel += texture2D(map_accumulation, texCoord + vec2(-1 / contextWidth, 0)).xyz;
+    smoothPixel += texture2D(map_accumulation, texCoord + vec2(0, 1.0 / contextHeight)).xyz;
+    smoothPixel += texture2D(map_accumulation, texCoord + vec2(1.0 / contextWidth, 0)).xyz;
+    smoothPixel += texture2D(map_accumulation, texCoord + vec2(0, -1.0 / contextHeight)).xyz;
+    smoothPixel += texture2D(map_accumulation, texCoord + vec2(-1.0 / contextWidth, 0)).xyz;
     smoothPixel *= 0.25;
     base = base * (1.0 - modifier.r) + smoothPixel * modifier.r;
     //base = base * (1.0 - modifier.r) + vec3(0, 0, 0) * modifier.r * 0.5 + smoothPixel * modifier.r * 0.5; // cartooney effect
@@ -138,5 +138,13 @@ void main(void) {
 
   fragColor = clamp(fragColor, 0.0, 1.0);
 
+#ifdef GF_WEBGL
+  // WebGL's default framebuffer has no GL_FRAMEBUFFER_SRGB switch.
+  vec3 srgb = mix(fragColor * 12.92,
+                 1.055 * pow(fragColor, vec3(1.0 / 2.4)) - 0.055,
+                 step(vec3(0.0031308), fragColor));
+  stdout = vec4(srgb, 1.0);
+#else
   stdout = vec4(fragColor, 0);
+#endif
 }

@@ -13,6 +13,7 @@ TaskManager::TaskManager() {}
 TaskManager::~TaskManager() {}
 
 void TaskManager::Initialize() {
+#ifndef __EMSCRIPTEN__
   int numthreads = std::thread::hardware_concurrency();
   if (numthreads < 3)
     numthreads = 3;  // todo: make minimum configurable
@@ -21,6 +22,7 @@ void TaskManager::Initialize() {
     pool.push_back(worker);
     worker->Run();
   }
+#endif
 }
 
 void TaskManager::EmptyQueue() {

@@ -1,6 +1,8 @@
 #ifndef _HPP_MESSAGEQUEUE
 #define _HPP_MESSAGEQUEUE
 
+#include <type_traits>
+
 #include "base/properties.hpp"
 #include "defines.hpp"
 #include "managers/environmentmanager.hpp"
@@ -14,7 +16,19 @@ public:
   MessageQueue() {}
   virtual ~MessageQueue() {}
 
+#ifdef __EMSCRIPTEN__
+  void DispatchTo(void* receiver) { synchronousReceiver = receiver; }
+#endif
+
   inline void PushMessage(T message, bool notify = true) {
+#ifdef __EMSCRIPTEN__
+    if constexpr (std::is_same_v<T, boost::intrusive_ptr<Command>>) {
+      if (synchronousReceiver) {
+        message->Handle(synchronousReceiver);
+        return;
+      }
+    }
+#endif
     std::unique_lock<std::mutex> lock(queue.mutex);
     queue.data.push_back(message);
     lock.unlock();
@@ -88,6 +102,9 @@ public:
   }
 
 protected:
+#ifdef __EMSCRIPTEN__
+  void* synchronousReceiver = nullptr;
+#endif
   Lockable<std::list<T>> queue;
   std::condition_variable messageNotification;
 };

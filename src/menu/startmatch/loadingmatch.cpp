@@ -100,6 +100,9 @@ LoadingMatchPage::LoadingMatchPage(Gui2WindowManager* windowManager, const Gui2P
   windowManager->GetPagePath()->Clear();
 
   sentStartGameSignal = false;
+#ifdef __EMSCRIPTEN__
+  readyTime_ms = EnvironmentManager::GetInstance().GetTime_ms() + 100;
+#endif
 }
 
 LoadingMatchPage::~LoadingMatchPage() {}
@@ -108,9 +111,15 @@ void LoadingMatchPage::Process() {
   Gui2Page::Process();
 
   if (!sentStartGameSignal) {
+#ifdef __EMSCRIPTEN__
+    if (EnvironmentManager::GetInstance().GetTime_ms() < readyTime_ms)
+      return;
+#endif
     sentStartGameSignal = true;
     // Allow one rendered loading frame before the heavier match setup begins.
+#ifndef __EMSCRIPTEN__
     EnvironmentManager::GetInstance().Pause_ms(100);
+#endif
     GetMenuTask()->SetMenuAction(e_MenuAction_Game);
   }
 }

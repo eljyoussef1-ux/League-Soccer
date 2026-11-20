@@ -6,6 +6,10 @@
 #include "managers/resourcemanagerpool.hpp"
 #include "rendering/r3d_messages.hpp"
 
+#ifdef __EMSCRIPTEN__
+#include <SDL2/SDL_image.h>
+#endif
+
 namespace blunted {
 
 GraphicsSystem::GraphicsSystem() : systemType(e_SystemType_Graphics) {
@@ -14,6 +18,12 @@ GraphicsSystem::GraphicsSystem() : systemType(e_SystemType_Graphics) {
 }
 
 GraphicsSystem::~GraphicsSystem() {}
+
+#ifdef __EMSCRIPTEN__
+void GraphicsSystem::PollEvents() {
+  static_cast<OpenGLRenderer3D*>(renderer3DTask)->PollEvents();
+}
+#endif
 
 void GraphicsSystem::Initialize(const Properties& config) {
   textureResourceManager =
@@ -32,6 +42,9 @@ void GraphicsSystem::Initialize(const Properties& config) {
   height = config.GetInt("context_y", 720);
   bpp = config.GetInt("context_bpp", 32);
   bool fullscreen = config.GetBool("context_fullscreen", false);
+#ifdef __EMSCRIPTEN__
+  IMG_Init(IMG_INIT_JPG | IMG_INIT_PNG);
+#endif
   renderer3DTask->Run();
 
   boost::intrusive_ptr<Renderer3DMessage_CreateContext> createContext(
@@ -69,6 +82,10 @@ void GraphicsSystem::Exit() {
   renderer3DTask->messageQueue.PushMessage(R3Dshutdown);
   R3Dshutdown->Wait();
 
+#ifdef __EMSCRIPTEN__
+  renderer3DTask->Exit();
+  IMG_Quit();
+#endif
   renderer3DTask->Join();
   delete renderer3DTask;
   renderer3DTask = nullptr;
