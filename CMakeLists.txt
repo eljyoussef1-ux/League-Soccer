@@ -391,19 +391,41 @@ if(GAMEPLAYFOOTBALL_BUILD_GAME)
   
   if(EMSCRIPTEN)
     set_target_properties(gameplayfootball PROPERTIES SUFFIX ".html")
+    option(GF_WASM_PARODY_SQUAD "Include FC Hors-jeu in the browser build." OFF)
+    set(GF_WEB_DATABASE_DIR "${PROJECT_SOURCE_DIR}/data/databases")
+    file(GLOB_RECURSE GF_WEB_DATABASE_ASSETS CONFIGURE_DEPENDS LIST_DIRECTORIES false
+      "${GF_WEB_DATABASE_DIR}/*")
+    if(GF_WASM_PARODY_SQUAD)
+      find_package(Python3 3.8 REQUIRED COMPONENTS Interpreter)
+      set(GF_WEB_DATABASE_DIR "${CMAKE_CURRENT_BINARY_DIR}/parody-databases")
+      set(GF_WEB_PARODY_DB "${GF_WEB_DATABASE_DIR}/default/database.sqlite")
+      set(GF_WEB_PARODY_SCRIPT "${PROJECT_SOURCE_DIR}/scripts/seed_parody_squad.py")
+      # Stage the database separately so a regular or native build uses the stock roster.
+      add_custom_command(OUTPUT "${GF_WEB_PARODY_DB}"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+          "${PROJECT_SOURCE_DIR}/data/databases" "${GF_WEB_DATABASE_DIR}"
+        COMMAND "${Python3_EXECUTABLE}" "${GF_WEB_PARODY_SCRIPT}"
+          "${PROJECT_SOURCE_DIR}/data/databases/default/database.sqlite" "${GF_WEB_PARODY_DB}"
+        DEPENDS ${GF_WEB_DATABASE_ASSETS} "${GF_WEB_PARODY_SCRIPT}"
+        COMMENT "Preparing the FC Hors-jeu squad"
+        VERBATIM)
+      add_custom_target(gf_web_parody_assets DEPENDS "${GF_WEB_PARODY_DB}")
+      add_dependencies(gameplayfootball gf_web_parody_assets)
+      set_property(TARGET gameplayfootball APPEND PROPERTY LINK_DEPENDS "${GF_WEB_PARODY_DB}")
+    endif()
     target_link_options(gameplayfootball PRIVATE
       ${GF_WEB_PORTS} -fexceptions -sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2
       -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=8388608
       "SHELL:--preload-file \"${PROJECT_SOURCE_DIR}/data/media@/media\""
-      "SHELL:--preload-file \"${PROJECT_SOURCE_DIR}/data/databases@/databases\""
+      "SHELL:--preload-file \"${GF_WEB_DATABASE_DIR}@/databases\""
       "SHELL:--preload-file \"${PROJECT_SOURCE_DIR}/data/locale@/locale\""
       "SHELL:--preload-file \"${PROJECT_SOURCE_DIR}/data/football.config@/football.config\""
     )
     file(GLOB_RECURSE GF_WEB_ASSETS CONFIGURE_DEPENDS LIST_DIRECTORIES false
-      "${PROJECT_SOURCE_DIR}/data/media/*" "${PROJECT_SOURCE_DIR}/data/databases/*"
+      "${PROJECT_SOURCE_DIR}/data/media/*"
       "${PROJECT_SOURCE_DIR}/data/locale/*")
     set_property(TARGET gameplayfootball APPEND PROPERTY LINK_DEPENDS
-      ${GF_WEB_ASSETS} "${PROJECT_SOURCE_DIR}/data/football.config")
+      ${GF_WEB_ASSETS} ${GF_WEB_DATABASE_ASSETS} "${PROJECT_SOURCE_DIR}/data/football.config")
   elseif(APPLE)
     set_target_properties(gameplayfootball PROPERTIES
       BUILD_WITH_INSTALL_RPATH TRUE

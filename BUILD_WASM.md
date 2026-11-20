@@ -1,5 +1,12 @@
 # Build WebAssembly de League-Soccer
 
+## Lancer la version compilée
+
+Si tu as reçu l'archive de la build, décompresse-la. Dans le dossier extrait,
+lance `python3 -m http.server 8000` et ouvre
+[http://localhost:8000/gameplayfootball.html](http://localhost:8000/gameplayfootball.html).
+Les quatre fichiers `gameplayfootball.*` doivent rester ensemble.
+
 ## Compiler et servir le jeu
 
 Prérequis : Git, CMake 3.14 ou plus récent, Ninja, Python 3 et les en-têtes
@@ -35,6 +42,30 @@ Les quatre fichiers doivent être servis ensemble depuis le même dossier HTTP.
 | `build-wasm/gameplayfootball.js` | Chargeur et interface entre le navigateur et le moteur |
 | `build-wasm/gameplayfootball.wasm` | Moteur du jeu compilé |
 | `build-wasm/gameplayfootball.data` | Ressources préchargées dans le système de fichiers virtuel |
+
+## Essayer le FC Hors-jeu
+
+Pour compiler la variante avec l'équipe parodique, relancer la configuration
+ci-dessus en ajoutant `-DGF_WASM_PARODY_SQUAD=ON`, puis reconstruire le jeu.
+Dans **Match rapide**, choisir le championnat **Parodie**, le **FC Hors-jeu**
+et un adversaire d'un autre championnat.
+
+Le onze titulaire comprend Lionel Pessi (meneur), Cristiano Gronaldo
+(avant-centre), Lamine Pas Mal (milieu gauche) et Enzo Khalifa (milieu
+central). Les notes ci-dessous sont les notes de base, avant la forme et la
+fatigue en match.
+
+| Joueur | Vitesse | Frappe | Passe | Dribble | Défense | Physique | Endurance |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Lionel Pessi | 87 | 92 | 93 | 97 | 36 | 65 | 76 |
+| Cristiano Gronaldo | 90 | 97 | 77 | 86 | 40 | 89 | 87 |
+| Lamine Pas Mal | 94 | 78 | 80 | 93 | 38 | 62 | 85 |
+| Enzo Khalifa | 74 | 74 | 92 | 82 | 77 | 76 | 91 |
+
+Le fichier `scripts/seed_parody_squad.py` convertit les notes sur 100 en
+22 attributs exploités par le moteur de match. CMake écrit la base peuplée
+dans le répertoire de compilation. La variante est jouable en match rapide
+au clavier et utilise le système de composition existant.
 
 ## Audit du dépôt et adaptations
 
