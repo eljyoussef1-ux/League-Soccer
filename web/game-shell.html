@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="fr">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>League Soccer</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100dvh; display: grid; place-content: center; background: #0a1422; color: #fff; font: 15px system-ui, sans-serif; }
+  main { width: min(100vw, 177.78dvh, 1280px); position: relative; }
+  canvas { width: 100%; height: auto; aspect-ratio: 16 / 9; display: block; outline: none; }
+  [hidden] { display: none !important; }
+  #status { position: absolute; inset: 40% 12%; text-align: center; pointer-events: none; }
+  #controls { display: flex; justify-content: space-between; padding: 8px max(12px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); gap: 10px; touch-action: none; user-select: none; -webkit-user-select: none; }
+  .pad, .actions { display: grid; grid-template-columns: repeat(3, minmax(44px, 1fr)); gap: 5px; }
+  button { min-height: 44px; border: 1px solid #7891ad; border-radius: 10px; background: #162c47; color: #fff; font: 600 14px system-ui, sans-serif; padding: 4px; touch-action: none; }
+  button.pressed { background: #096688; border-color: #d4efff; }
+  button[data-key="Enter"] { background: #1e6255; }
+  .up { grid-column: 2; }
+  .left { grid-column: 1; }
+  .down { grid-column: 2; }
+  .right { grid-column: 3; }
+  @media (orientation: landscape) {
+    main.touch { width: min(100vw, calc((100dvh - 112px) * 16 / 9), 1280px); }
+    .actions { grid-template-columns: repeat(5, minmax(49px, 1fr)); }
+  }
+</style>
+<main id="game">
+  <canvas id="canvas" tabindex="0" aria-label="Terrain de League Soccer"></canvas>
+  <p id="status" role="status">Chargement du jeu…</p>
+  <div id="controls" hidden aria-label="Commandes tactiles">
+    <div class="pad" aria-label="Déplacement">
+      <button class="up" data-key="ArrowUp" aria-label="Haut">▲</button>
+      <button class="left" data-key="ArrowLeft" aria-label="Gauche">◀</button>
+      <button class="down" data-key="ArrowDown" aria-label="Bas">▼</button>
+      <button class="right" data-key="ArrowRight" aria-label="Droite">▶</button>
+    </div>
+    <div class="actions" aria-label="Actions">
+      <button data-key="Enter">OK</button>
+      <button data-key="Escape">Retour / Pause</button>
+      <button data-key="KeyS">Passe</button>
+      <button data-key="KeyD">Tir</button>
+      <button data-key="KeyE">Sprint</button>
+      <button data-key="KeyA">Centre</button>
+      <button data-key="KeyW">Profondeur</button>
+      <button data-key="KeyQ">Changer</button>
+    </div>
+  </div>
+</main>
+<script>
+  const canvas = document.querySelector("#canvas");
+  const status = document.querySelector("#status");
+  const controls = document.querySelector("#controls");
+  const touchControls = navigator.maxTouchPoints > 0;
+  const active = new Map();
+  const released = new Set();
+
+  function sendKey(type, code) {
+    const key = code.startsWith("Key") ? code.slice(3).toLowerCase() : code;
+    window.dispatchEvent(new KeyboardEvent(type, {key, code, bubbles: true, cancelable: true}));
+  }
+
+  function release(button) {
+    if (!active.delete(button)) return;
+    released.delete(button);
+    button.classList.remove("pressed");
+    sendKey("keyup", button.dataset.key);
+  }
+
+  function releaseAll() {
+    for (const button of active.keys()) release(button);
+  }
+
+  for (const button of controls.querySelectorAll("button")) {
+    button.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      if (active.has(button)) return;
+      button.setPointerCapture(event.pointerId);
+      const press = {id: event.pointerId, sampled: false};
+      active.set(button, press);
+      button.classList.add("pressed");
+      sendKey("keydown", button.dataset.key);
+      // Keep quick taps alive until SDL has had a chance to poll a frame.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (active.get(button) !== press) return;
+        press.sampled = true;
+        if (released.has(button)) release(button);
+      }));
+    });
+
+    button.addEventListener("pointerup", (event) => {
+      const press = active.get(button);
+      if (press?.id !== event.pointerId) return;
+      if (press.sampled) release(button);
+      else released.add(button);
+    });
+
+    for (const type of ["pointercancel", "lostpointercapture"]) {
+      button.addEventListener(type, (event) => {
+        if (active.get(button)?.id === event.pointerId && !released.has(button)) release(button);
+      });
+    }
+  }
+
+  window.addEventListener("blur", releaseAll);
+  document.addEventListener("visibilitychange", () => { if (document.hidden) releaseAll(); });
+  window.addEventListener("contextmenu", (event) => {
+    if (event.target === canvas || controls.contains(event.target)) event.preventDefault();
+  });
+  canvas.addEventListener("webglcontextlost", () => {
+    releaseAll();
+    controls.hidden = true;
+    status.hidden = false;
+    status.textContent = "Le navigateur a interrompu le rendu. Recharge la page pour relancer le jeu.";
+  });
+
+  var Module = {
+    canvas,
+    touchControls,
+    setStatus(text) { if (text) status.textContent = text; },
+    onRuntimeInitialized() {
+      document.querySelector("#game").classList.toggle("touch", touchControls);
+      controls.hidden = !touchControls;
+      status.hidden = true;
+    },
+    onAbort() {
+      controls.hidden = true;
+      status.hidden = false;
+      status.textContent = "Impossible de démarrer le jeu. Vérifie que WebGL2 est disponible.";
+    },
+  };
+</script>
+{{{ SCRIPT }}}
+</html>

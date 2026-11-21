@@ -485,10 +485,14 @@ bool OpenGLRenderer3D::CreateContext(int width, int height, int bpp, bool fullsc
 
   // #endif
 
-  window = SDL_CreateWindow("League Soccer", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width,
-                            height,
-                            SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_SHOWN |
-                                (fullscreen ? SDL_WINDOW_FULLSCREEN : 0));
+  Uint32 windowFlags = SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN;
+#ifndef __EMSCRIPTEN__
+  windowFlags |= SDL_WINDOW_ALLOW_HIGHDPI;
+#endif
+  if (fullscreen)
+    windowFlags |= SDL_WINDOW_FULLSCREEN;
+  window = SDL_CreateWindow("League Soccer", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+                            width, height, windowFlags);
   if (!window) {
     Log(e_FatalError, "OpenGLRenderer3D", "CreateContext",
         "Failed to create SDL window: " + std::string(SDL_GetError()));
@@ -542,10 +546,11 @@ bool OpenGLRenderer3D::CreateContext(int width, int height, int bpp, bool fullsc
 
 #ifdef __EMSCRIPTEN__
   // Deferred lighting renders into RGBA16F color attachments.
-  if (!emscripten_webgl_enable_extension(emscripten_webgl_get_current_context(),
-                                        "EXT_color_buffer_float")) {
+  const auto webContext = emscripten_webgl_get_current_context();
+  if (!emscripten_webgl_enable_extension(webContext, "EXT_color_buffer_half_float") &&
+      !emscripten_webgl_enable_extension(webContext, "EXT_color_buffer_float")) {
     Log(e_FatalError, "OpenGLRenderer3D", "CreateContext",
-        "WebGL2 requires EXT_color_buffer_float for deferred lighting");
+        "WebGL2 requires a floating-point color buffer extension for deferred lighting");
   }
 #endif
 

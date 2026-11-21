@@ -413,7 +413,9 @@ if(GAMEPLAYFOOTBALL_BUILD_GAME)
       add_dependencies(gameplayfootball gf_web_parody_assets)
       set_property(TARGET gameplayfootball APPEND PROPERTY LINK_DEPENDS "${GF_WEB_PARODY_DB}")
     endif()
+    set(GF_WEB_SHELL "${PROJECT_SOURCE_DIR}/web/game-shell.html")
     target_link_options(gameplayfootball PRIVATE
+      "SHELL:--shell-file \"${GF_WEB_SHELL}\""
       ${GF_WEB_PORTS} -fexceptions -sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2
       -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=8388608
       "SHELL:--preload-file \"${PROJECT_SOURCE_DIR}/data/media@/media\""
@@ -425,7 +427,7 @@ if(GAMEPLAYFOOTBALL_BUILD_GAME)
       "${PROJECT_SOURCE_DIR}/data/media/*"
       "${PROJECT_SOURCE_DIR}/data/locale/*")
     set_property(TARGET gameplayfootball APPEND PROPERTY LINK_DEPENDS
-      ${GF_WEB_ASSETS} ${GF_WEB_DATABASE_ASSETS} "${PROJECT_SOURCE_DIR}/data/football.config")
+      "${GF_WEB_SHELL}" ${GF_WEB_ASSETS} ${GF_WEB_DATABASE_ASSETS} "${PROJECT_SOURCE_DIR}/data/football.config")
   elseif(APPLE)
     set_target_properties(gameplayfootball PROPERTIES
       BUILD_WITH_INSTALL_RPATH TRUE

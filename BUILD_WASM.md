@@ -33,7 +33,7 @@ python3 -m http.server 8000 --directory build-wasm
 ```
 
 Ouvrir [http://localhost:8000/gameplayfootball.html](http://localhost:8000/gameplayfootball.html)
-avec un navigateur doté de WebGL2 et de l’extension `EXT_color_buffer_float`.
+avec un navigateur doté de WebGL2 et d’une extension de rendu flottant.
 Les quatre fichiers doivent être servis ensemble depuis le même dossier HTTP.
 
 | Fichier | Rôle |
@@ -97,3 +97,16 @@ au clavier et utilise le système de composition existant.
 - Les 322 tests natifs sans interface passent. Le jeu de bureau complet,
   les autres navigateurs, les manettes et les modes carrière restent à
   vérifier pour cette version.
+
+## Jouer sur iPad
+
+Ouvre l’adresse HTTP ou HTTPS du jeu dans Safari. La page affiche un pavé
+directionnel et des boutons tactiles pour confirmer, revenir, mettre en pause,
+passer, tirer, centrer, sprinter ou changer de joueur. Le pavé et une action
+peuvent être utilisés simultanément. Le mode paysage laisse davantage de place
+au terrain. Les commandes clavier restent disponibles.
+
+La page adapte la taille du terrain à la fenêtre. Sur écran tactile, le moteur
+utilise une résolution interne maximale de 960 × 540 par défaut, sans
+multiplier la taille du rendu par la densité de pixels de l’écran. Le port
+accepte `EXT_color_buffer_half_float` ou `EXT_color_buffer_float`.

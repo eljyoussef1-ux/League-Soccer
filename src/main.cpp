@@ -549,6 +549,15 @@ int main(int argc, const char** argv) {
     configFile = argv[1];
   configFile = ResolveConfigFilename(configFile);
   config->LoadFile(configFile.c_str());
+#ifdef __EMSCRIPTEN__
+  if (EM_ASM_INT({ return Module.touchControls ? 1 : 0; })) {
+    // Reduce the fill rate and GPU memory used by the deferred renderer.
+    if (config->GetInt("context_x", 1280) > 960) {
+      config->Set("context_x", 960.0f);
+      config->Set("context_y", 540.0f);
+    }
+  }
+#endif
 
   // Initialize localization using saved language preference (default: "en")
   Localization::GetInstance().Load(config->Get("locale_language", "en"));
